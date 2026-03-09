@@ -1,0 +1,56 @@
+# =========================
+# React / Node
+# =========================
+
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# build React
+build/
+dist/
+
+# environnement
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# =========================
+# PHP
+# =========================
+
+vendor/
+composer.lock
+
+# logs
+*.log
+
+# cache
+cache/
+tmp/
+
+# =========================
+# IDE
+# =========================
+
+.vscode/
+.idea/
+
+# =========================
+# OS
+# =========================
+
+.DS_Store
+Thumbs.db
+*~
+
+# =========================
+# fichiers temporaires
+# =========================
+
+*.tmp
+*.swp
