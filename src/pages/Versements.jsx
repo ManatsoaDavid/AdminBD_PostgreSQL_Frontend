@@ -1,149 +1,361 @@
-import { useState, useEffect } from 'react';
-import { versementsAPI, clientsAPI } from '../services/api';
+import { useState, useEffect } from "react";
+import {
+  Search,
+  Plus,
+  Trash2,
+  PenLine,
+  X,
+  ArrowLeftRight,
+  RefreshCw,
+  Save,
+} from "lucide-react";
+import { toast, ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
+import { versementsAPI, clientsAPI } from "../services/api";
+import ConfirmModal from "../components/ConfirmModal";
 
 export default function Versements() {
-    const [versements, setVersements] = useState([]);
-    const [clients, setClients]       = useState([]);
-    const [form, setForm]             = useState({ ncheque: '', ncompte: '', montant: '' });
-    const [editId, setEditId]         = useState(null);
-    const [message, setMessage]       = useState('');
+  const [versements, setVersements] = useState([]);
+  const [clients, setClients] = useState([]);
+  const [filtered, setFiltered] = useState([]);
+  const [search, setSearch] = useState("");
+  const [filtreClient, setFiltreClient] = useState("");
+  const [form, setForm] = useState({ ncheque: "", ncompte: "", montant: "" });
+  const [editId, setEditId] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [modal, setModal] = useState({ open: false, id: null });
 
-    const charger = async () => {
-        const [v, c] = await Promise.all([
-            versementsAPI.getAll(),
-            clientsAPI.getAll()
-        ]);
-        setVersements(v.data);
-        setClients(c.data);
-    };
+  const charger = async () => {
+    const [v, c] = await Promise.all([
+      versementsAPI.getAll(),
+      clientsAPI.getAll(),
+    ]);
+    setVersements(v.data);
+    setClients(c.data);
+  };
 
-    useEffect(() => { charger(); }, []);
+  useEffect(() => {
+    charger();
+  }, []);
 
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        if (editId) {
-            await versementsAPI.update({ ...form, nversement: editId });
-            setMessage('✅ Versement modifié !');
-            setEditId(null);
-        } else {
-            await versementsAPI.create(form);
-            setMessage('✅ Versement ajouté !');
-        }
-        setForm({ ncheque: '', ncompte: '', montant: '' });
-        charger();
-        setTimeout(() => setMessage(''), 3000);
-    };
+  useEffect(() => {
+    let result = versements;
+    if (filtreClient)
+      result = result.filter((v) => v.ncompte.toString() === filtreClient);
+    if (search) {
+      const q = search.toLowerCase();
+      result = result.filter(
+        (v) =>
+          v.ncheque?.toLowerCase().includes(q) ||
+          v.nomclient?.toLowerCase().includes(q) ||
+          v.nversement.toString().includes(q),
+      );
+    }
+    setFiltered(result);
+  }, [search, filtreClient, versements]);
 
-    const handleEdit = (v) => {
-        setEditId(v.nversement);
-        setForm({ ncheque: v.ncheque, ncompte: v.ncompte, montant: v.montant });
-    };
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      if (editId) {
+        await versementsAPI.update({ ...form, nversement: editId });
+        toast.success("✅ Versement modifié avec succès !");
+        setEditId(null);
+      } else {
+        await versementsAPI.create(form);
+        toast.success("✅ Versement ajouté avec succès !");
+      }
+      setForm({ ncheque: "", ncompte: "", montant: "" });
+      charger();
+    } catch {
+      toast.error("Une erreur est survenue.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    const handleDelete = async (id) => {
-        if (!confirm('Supprimer ce versement ?')) return;
-        await versementsAPI.delete(id);
-        setMessage('🗑️ Versement supprimé !');
-        charger();
-        setTimeout(() => setMessage(''), 3000);
-    };
+  const handleEdit = (v) => {
+    setEditId(v.nversement);
+    setForm({ ncheque: v.ncheque, ncompte: v.ncompte, montant: v.montant });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    toast.info(`✏️ Modification du versement #${v.nversement}`);
+  };
 
-    return (
-        <div style={styles.container}>
-            <h2 style={styles.titre}>💰 Gestion des Versements</h2>
+  const handleDelete = async () => {
+    try {
+      await versementsAPI.delete(modal.id);
+      toast.success("🗑️ Versement supprimé !");
+      charger();
+    } catch {
+      toast.error("Erreur lors de la suppression.");
+    } finally {
+      setModal({ open: false, id: null });
+    }
+  };
 
-            {/* Formulaire */}
-            <div style={styles.card}>
-                <h3>{editId ? '✏️ Modifier le versement' : '➕ Nouveau versement'}</h3>
-                <form onSubmit={handleSubmit} style={styles.form}>
-                    <input
-                        style={styles.input}
-                        placeholder="N° Chèque"
-                        value={form.ncheque}
-                        onChange={e => setForm({...form, ncheque: e.target.value})}
-                        required
-                    />
-                    <select
-                        style={styles.input}
-                        value={form.ncompte}
-                        onChange={e => setForm({...form, ncompte: e.target.value})}
-                        required
-                    >
-                        <option value="">-- Choisir un client --</option>
-                        {clients.map(c => (
-                            <option key={c.ncompte} value={c.ncompte}>
-                                {c.nomclient} (Solde: {parseFloat(c.solde).toLocaleString()} Ar)
-                            </option>
-                        ))}
-                    </select>
-                    <input
-                        style={styles.input}
-                        type="number"
-                        placeholder="Montant (Ar)"
-                        value={form.montant}
-                        onChange={e => setForm({...form, montant: e.target.value})}
-                        required
-                    />
-                    <button type="submit" style={styles.btnAjouter}>
-                        {editId ? '💾 Modifier' : '➕ Ajouter'}
-                    </button>
-                    {editId && (
-                        <button type="button" onClick={() => { setEditId(null); setForm({ ncheque: '', ncompte: '', montant: '' }); }} style={styles.btnAnnuler}>
-                            ❌ Annuler
-                        </button>
-                    )}
-                </form>
-                {message && <p style={styles.message}>{message}</p>}
-            </div>
+  const totalMontant = filtered.reduce((s, v) => s + parseFloat(v.montant), 0);
 
-            {/* Tableau */}
-            <div style={styles.card}>
-                <h3>Liste des versements ({versements.length})</h3>
-                <table style={styles.table}>
-                    <thead>
-                        <tr style={styles.thead}>
-                            <th style={styles.th}>N° Versement</th>
-                            <th style={styles.th}>N° Chèque</th>
-                            <th style={styles.th}>Client</th>
-                            <th style={styles.th}>Montant (Ar)</th>
-                            <th style={styles.th}>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {versements.map(v => (
-                            <tr key={v.nversement} style={styles.tr}>
-                                <td style={styles.td}>{v.nversement}</td>
-                                <td style={styles.td}>{v.ncheque}</td>
-                                <td style={styles.td}>{v.nomclient}</td>
-                                <td style={{...styles.td, color: '#1a237e', fontWeight: 'bold'}}>
-                                    {parseFloat(v.montant).toLocaleString()} Ar
-                                </td>
-                                <td style={styles.td}>
-                                    <button onClick={() => handleEdit(v)} style={styles.btnEdit}>✏️</button>
-                                    <button onClick={() => handleDelete(v.nversement)} style={styles.btnDelete}>🗑️</button>
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
+  return (
+    <div className="max-w-5xl mx-auto px-6 py-8">
+      <ToastContainer position="top-right" autoClose={3000} />
+      <ConfirmModal
+        isOpen={modal.open}
+        onConfirm={handleDelete}
+        onCancel={() => setModal({ open: false, id: null })}
+        title="Supprimer ce versement ?"
+        message="Cette action est irréversible et mettra à jour le solde du client automatiquement."
+        type="danger"
+      />
+
+      {/* Header */}
+      <div className="flex items-center justify-between mb-8">
+        <div>
+          <h2 className="text-3xl font-bold text-gray-900">Versements</h2>
+          <p className="text-gray-400 text-sm mt-1">
+            Enregistrez et gérez les versements bancaires
+          </p>
         </div>
-    );
-}
+        <div className="flex gap-4">
+          <div className="bg-white border border-gray-100 rounded-2xl px-5 py-3 text-center shadow-sm">
+            <p className="text-2xl font-bold text-blue-600">
+              {versements.length}
+            </p>
+            <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-1">
+              <ArrowLeftRight size={11} />
+              Total
+            </p>
+          </div>
+          <div className="bg-white border border-gray-100 rounded-2xl px-5 py-3 text-center shadow-sm">
+            <p className="text-xl font-bold text-emerald-600">
+              {totalMontant.toLocaleString()}
+            </p>
+            <p className="text-xs text-gray-400 mt-0.5">Montants (Ar)</p>
+          </div>
+        </div>
+      </div>
 
-const styles = {
-    container:  { padding: '30px', maxWidth: '1000px', margin: '0 auto' },
-    titre:      { color: '#1a237e', marginBottom: '20px' },
-    card:       { background: 'white', borderRadius: '10px', padding: '25px', marginBottom: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' },
-    form:       { display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' },
-    input:      { padding: '10px', borderRadius: '6px', border: '1px solid #ccc', fontSize: '14px', flex: 1, minWidth: '160px' },
-    btnAjouter: { padding: '10px 20px', background: '#1a237e', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' },
-    btnAnnuler: { padding: '10px 20px', background: '#757575', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer' },
-    btnEdit:    { padding: '6px 10px', background: '#f57f17', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', marginRight: '5px' },
-    btnDelete:  { padding: '6px 10px', background: '#c62828', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' },
-    message:    { marginTop: '10px', color: '#2e7d32', fontWeight: 'bold' },
-    table:      { width: '100%', borderCollapse: 'collapse' },
-    thead:      { background: '#1a237e' },
-    th:         { padding: '12px', color: 'white', textAlign: 'left' },
-    tr:         { borderBottom: '1px solid #eee' },
-    td:         { padding: '12px' }
-};
+      {/* Formulaire */}
+      <div
+        className={`bg-white rounded-2xl shadow-sm border p-6 mb-6 transition-all ${editId ? "border-orange-200 bg-orange-50/30" : "border-gray-100"}`}
+      >
+        <h3 className="text-sm font-bold text-gray-700 uppercase tracking-wider mb-4 flex items-center gap-2">
+          {editId ? (
+            <>
+              <PenLine size={16} className="text-orange-500" /> Modifier le
+              versement #{editId}
+            </>
+          ) : (
+            <>
+              <Plus size={16} className="text-blue-500" /> Nouveau versement
+            </>
+          )}
+        </h3>
+        <form onSubmit={handleSubmit} className="flex gap-3 flex-wrap">
+          <input
+            className="flex-1 min-w-36 px-4 py-2.5 bg-gray-50 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:bg-white focus:outline-none transition-all text-sm"
+            placeholder="N° Chèque"
+            value={form.ncheque}
+            onChange={(e) => setForm({ ...form, ncheque: e.target.value })}
+            required
+          />
+          <select
+            className="flex-1 min-w-48 px-4 py-2.5 bg-gray-50 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:bg-white focus:outline-none transition-all text-sm"
+            value={form.ncompte}
+            onChange={(e) => setForm({ ...form, ncompte: e.target.value })}
+            required
+          >
+            <option value="">-- Choisir un client --</option>
+            {clients.map((c) => (
+              <option key={c.ncompte} value={c.ncompte}>
+                {c.nomclient} — {parseFloat(c.solde).toLocaleString()} Ar
+              </option>
+            ))}
+          </select>
+          <input
+            type="number"
+            className="flex-1 min-w-36 px-4 py-2.5 bg-gray-50 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:bg-white focus:outline-none transition-all text-sm"
+            placeholder="Montant (Ar)"
+            value={form.montant}
+            onChange={(e) => setForm({ ...form, montant: e.target.value })}
+            required
+          />
+          <button
+            type="submit"
+            disabled={loading}
+            className={`flex items-center gap-2 px-6 py-2.5 text-white font-semibold rounded-xl transition-all disabled:opacity-60 shadow-sm ${editId ? "bg-orange-500 hover:bg-orange-600 shadow-orange-200" : "bg-blue-600 hover:bg-blue-700 shadow-blue-200"}`}
+          >
+            {loading ? (
+              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+            ) : editId ? (
+              <Save size={16} />
+            ) : (
+              <Plus size={16} />
+            )}
+            {editId ? "Enregistrer" : "Ajouter"}
+          </button>
+          {editId && (
+            <button
+              type="button"
+              onClick={() => {
+                setEditId(null);
+                setForm({ ncheque: "", ncompte: "", montant: "" });
+              }}
+              className="flex items-center gap-2 px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-600 font-semibold rounded-xl transition-colors"
+            >
+              <X size={16} /> Annuler
+            </button>
+          )}
+        </form>
+      </div>
+
+      {/* Tableau */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+        {/* Filtres */}
+        <div className="flex flex-wrap gap-3 mb-5">
+          <div className="relative flex-1 min-w-52">
+            <Search
+              size={16}
+              className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"
+            />
+            <input
+              className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:bg-white focus:outline-none transition-all text-sm"
+              placeholder="Rechercher..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            {search && (
+              <button
+                onClick={() => setSearch("")}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+          <select
+            className="px-4 py-2.5 bg-gray-50 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none text-sm"
+            value={filtreClient}
+            onChange={(e) => setFiltreClient(e.target.value)}
+          >
+            <option value="">👥 Tous les clients</option>
+            {clients.map((c) => (
+              <option key={c.ncompte} value={c.ncompte}>
+                {c.nomclient}
+              </option>
+            ))}
+          </select>
+          {(search || filtreClient) && (
+            <button
+              onClick={() => {
+                setSearch("");
+                setFiltreClient("");
+              }}
+              className="flex items-center gap-1.5 px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-600 text-sm rounded-xl transition-colors"
+            >
+              <RefreshCw size={14} /> Réinitialiser
+            </button>
+          )}
+          <div className="ml-auto text-sm text-gray-400 flex items-center">
+            <span className="font-semibold text-gray-700">
+              {filtered.length}
+            </span>
+            &nbsp;versement(s) —&nbsp;
+            <span className="font-bold text-blue-700">
+              {totalMontant.toLocaleString()} Ar
+            </span>
+          </div>
+        </div>
+
+        {/* Table */}
+        <div className="overflow-x-auto rounded-xl border border-gray-100">
+          <table className="w-full">
+            <thead>
+              <tr className="bg-gradient-to-r from-slate-800 to-blue-900 text-white">
+                <th className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider">
+                  N° Versement
+                </th>
+                <th className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider">
+                  N° Chèque
+                </th>
+                <th className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider">
+                  Client
+                </th>
+                <th className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider">
+                  Montant
+                </th>
+                <th className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {filtered.length === 0 ? (
+                <tr>
+                  <td colSpan="5" className="px-5 py-12 text-center">
+                    <ArrowLeftRight
+                      size={40}
+                      className="text-gray-200 mx-auto mb-2"
+                    />
+                    <p className="text-gray-400 text-sm">
+                      Aucun versement trouvé
+                    </p>
+                  </td>
+                </tr>
+              ) : (
+                filtered.map((v, i) => (
+                  <tr
+                    key={v.nversement}
+                    className={`hover:bg-blue-50/50 transition-colors ${i % 2 === 0 ? "" : "bg-gray-50/30"}`}
+                  >
+                    <td className="px-5 py-4">
+                      <span className="text-xs font-mono bg-gray-100 text-gray-600 px-2 py-1 rounded-lg">
+                        #{v.nversement}
+                      </span>
+                    </td>
+                    <td className="px-5 py-4 text-sm text-gray-700 font-medium">
+                      {v.ncheque}
+                    </td>
+                    <td className="px-5 py-4">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-400 to-indigo-500 flex items-center justify-center text-white text-xs font-bold">
+                          {v.nomclient?.[0]}
+                        </div>
+                        <span className="text-sm font-semibold text-gray-800">
+                          {v.nomclient}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-5 py-4">
+                      <span className="text-sm font-bold bg-blue-50 text-blue-700 px-3 py-1 rounded-full">
+                        {parseFloat(v.montant).toLocaleString()} Ar
+                      </span>
+                    </td>
+                    <td className="px-5 py-4">
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleEdit(v)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-50 hover:bg-orange-100 text-orange-600 text-xs font-semibold rounded-lg transition-colors border border-orange-100"
+                        >
+                          <PenLine size={12} /> Modifier
+                        </button>
+                        <button
+                          onClick={() =>
+                            setModal({ open: true, id: v.nversement })
+                          }
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 text-xs font-semibold rounded-lg transition-colors border border-red-100"
+                        >
+                          <Trash2 size={12} /> Supprimer
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
