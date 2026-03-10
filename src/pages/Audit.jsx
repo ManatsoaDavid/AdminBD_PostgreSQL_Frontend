@@ -8,10 +8,13 @@ import {
   Trash2,
   ClipboardList,
   Filter,
+  FileDown,
 } from "lucide-react";
-import { ToastContainer } from "react-toastify";
+import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { auditAPI } from "../services/api";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 const ACTION_CONFIG = {
   INSERT: {
@@ -81,6 +84,226 @@ export default function Audit() {
     setFiltered(result);
   }, [search, filtreAction, dateDebut, dateFin, audits]);
 
+  // ============================================
+  // EXPORT PDF
+  // ============================================
+  const exportPDF = () => {
+    if (filtered.length === 0) {
+      toast.warning("Aucune donnée à exporter !");
+      return;
+    }
+
+    const doc = new jsPDF({
+      orientation: "landscape",
+      unit: "mm",
+      format: "a4",
+    });
+    const now = new Date().toLocaleString("fr-FR");
+    const user = JSON.parse(localStorage.getItem("user") || "{}");
+
+    // ── Fond header ──
+    doc.setFillColor(15, 23, 72);
+    doc.rect(0, 0, 297, 35, "F");
+
+    // ── Titre ──
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(20);
+    doc.setFont("helvetica", "bold");
+    doc.text("JOURNAL D'AUDIT — VERSEMENTS BANCAIRES", 148, 14, {
+      align: "center",
+    });
+
+    // ── Sous-titre ──
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(144, 202, 249);
+    doc.text(
+      "Système de gestion et de traçabilité des opérations bancaires",
+      148,
+      22,
+      { align: "center" },
+    );
+
+    // ── Infos export ──
+    doc.setFontSize(8);
+    doc.setTextColor(200, 220, 255);
+    doc.text(`Généré le : ${now}`, 10, 30);
+    doc.text(`Par : ${user.username || "N/A"}`, 148, 30, { align: "center" });
+    doc.text(`Total : ${filtered.length} opération(s)`, 287, 30, {
+      align: "right",
+    });
+
+    // ── Statistiques ──
+    const total =
+      parseInt(stats.nb_insertions || 0) +
+      parseInt(stats.nb_modifications || 0) +
+      parseInt(stats.nb_suppressions || 0);
+
+    const statBoxes = [
+      {
+        label: "INSERTIONS",
+        val: stats.nb_insertions || 0,
+        r: 39,
+        g: 174,
+        b: 96,
+      },
+      {
+        label: "MODIFICATIONS",
+        val: stats.nb_modifications || 0,
+        r: 243,
+        g: 156,
+        b: 18,
+      },
+      {
+        label: "SUPPRESSIONS",
+        val: stats.nb_suppressions || 0,
+        r: 231,
+        g: 76,
+        b: 60,
+      },
+      { label: "TOTAL", val: total, r: 52, g: 152, b: 219 },
+    ];
+
+    const boxW = 60,
+      boxH = 18,
+      startX = 18,
+      startY = 40;
+    statBoxes.forEach((s, i) => {
+      const x = startX + i * (boxW + 5);
+
+      // Box background
+      doc.setFillColor(s.r, s.g, s.b);
+      doc.roundedRect(x, startY, boxW, boxH, 3, 3, "F");
+
+      // Valeur
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(18);
+      doc.setFont("helvetica", "bold");
+      doc.text(String(s.val), x + boxW / 2, startY + 10, { align: "center" });
+
+      // Label
+      doc.setFontSize(7);
+      doc.setFont("helvetica", "normal");
+      doc.text(s.label, x + boxW / 2, startY + 15, { align: "center" });
+    });
+
+    // ── Filtres actifs ──
+    let filterY = 63;
+    const filtresActifs = [];
+    if (filtreAction) filtresActifs.push(`Action : ${filtreAction}`);
+    if (search) filtresActifs.push(`Recherche : "${search}"`);
+    if (dateDebut) filtresActifs.push(`Du : ${dateDebut}`);
+    if (dateFin) filtresActifs.push(`Au : ${dateFin}`);
+
+    if (filtresActifs.length > 0) {
+      doc.setFontSize(8);
+      doc.setTextColor(100, 100, 100);
+      doc.setFont("helvetica", "italic");
+      doc.text(`Filtres appliqués : ${filtresActifs.join(" | ")}`, 10, filterY);
+      filterY += 6;
+    }
+
+    // ── Tableau ──
+    autoTable(doc, {
+      startY: filterY + 2,
+      head: [
+        [
+          "Action",
+          "Date & Heure",
+          "N° Versement",
+          "Client",
+          "Solde Avant (Ar)",
+          "Solde Après (Ar)",
+          "Utilisateur",
+        ],
+      ],
+      body: filtered.map((a) => [
+        a.type_action,
+        new Date(a.date_operation).toLocaleString("fr-FR"),
+        `#${a.nversement}`,
+        a.nomclient || "—",
+        a.montant_ancien
+          ? parseFloat(a.montant_ancien).toLocaleString() + " Ar"
+          : "—",
+        a.montant_nouv
+          ? parseFloat(a.montant_nouv).toLocaleString() + " Ar"
+          : "—",
+        a.utilisateur || "—",
+      ]),
+      headStyles: {
+        fillColor: [15, 23, 72],
+        textColor: [255, 255, 255],
+        fontStyle: "bold",
+        fontSize: 9,
+        halign: "center",
+        cellPadding: 4,
+      },
+      bodyStyles: {
+        fontSize: 8,
+        cellPadding: 3,
+        textColor: [50, 50, 50],
+      },
+      alternateRowStyles: {
+        fillColor: [245, 247, 255],
+      },
+      columnStyles: {
+        0: { halign: "center", fontStyle: "bold", cellWidth: 25 },
+        1: { halign: "center", cellWidth: 38 },
+        2: { halign: "center", cellWidth: 25 },
+        3: { halign: "left", cellWidth: 40 },
+        4: { halign: "right", cellWidth: 32 },
+        5: { halign: "right", cellWidth: 32 },
+        6: { halign: "center", cellWidth: 30 },
+      },
+      // Colorier les lignes selon l'action
+      didDrawCell: (data) => {
+        if (data.section === "body" && data.column.index === 0) {
+          const action = data.cell.text[0];
+          if (action === "INSERT") {
+            doc.setTextColor(39, 174, 96);
+          } else if (action === "UPDATE") {
+            doc.setTextColor(243, 156, 18);
+          } else if (action === "DELETE") {
+            doc.setTextColor(231, 76, 60);
+          }
+          doc.setFont("helvetica", "bold");
+          doc.text(
+            action,
+            data.cell.x + data.cell.width / 2,
+            data.cell.y + data.cell.height / 2 + 1,
+            { align: "center" },
+          );
+        }
+      },
+      margin: { left: 10, right: 10 },
+    });
+
+    // ── Footer sur chaque page ──
+    const pageCount = doc.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      const pageH = doc.internal.pageSize.height;
+      const pageW = doc.internal.pageSize.width;
+
+      doc.setFillColor(240, 242, 255);
+      doc.rect(0, pageH - 12, pageW, 12, "F");
+
+      doc.setFontSize(7);
+      doc.setTextColor(120, 120, 150);
+      doc.setFont("helvetica", "normal");
+      doc.text("Versements Bancaires — Document confidentiel", 10, pageH - 4);
+      doc.text(`Page ${i} / ${pageCount}`, pageW / 2, pageH - 4, {
+        align: "center",
+      });
+      doc.text(now, pageW - 10, pageH - 4, { align: "right" });
+    }
+
+    // ── Téléchargement ──
+    const filename = `audit_versements_${new Date().toISOString().slice(0, 10)}.pdf`;
+    doc.save(filename);
+    toast.success(`📄 PDF exporté : ${filename}`);
+  };
+
   const hasFiltres = search || filtreAction || dateDebut || dateFin;
   const total =
     parseInt(stats.nb_insertions || 0) +
@@ -92,11 +315,21 @@ export default function Audit() {
       <ToastContainer position="top-right" autoClose={3000} />
 
       {/* Header */}
-      <div className="mb-8">
-        <h2 className="text-3xl font-bold text-gray-900">Journal d'Audit</h2>
-        <p className="text-gray-400 text-sm mt-1">
-          Historique complet de toutes les opérations
-        </p>
+      <div className="flex items-center justify-between mb-8">
+        <div>
+          <h2 className="text-3xl font-bold text-gray-900">Journal d'Audit</h2>
+          <p className="text-gray-400 text-sm mt-1">
+            Historique complet de toutes les opérations
+          </p>
+        </div>
+        {/* Bouton Export PDF */}
+        <button
+          onClick={exportPDF}
+          className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-semibold rounded-xl shadow-lg shadow-red-200 transition-all"
+        >
+          <FileDown size={18} />
+          Exporter PDF
+        </button>
       </div>
 
       {/* Stats cliquables */}
@@ -303,21 +536,16 @@ export default function Audit() {
                           </span>
                         </div>
                       </td>
-                      <td className="px-5 py-4">
-                        <span className="text-sm text-gray-500">
-                          {a.montant_ancien
-                            ? parseFloat(a.montant_ancien).toLocaleString() +
-                              " Ar"
-                            : "—"}
-                        </span>
+                      <td className="px-5 py-4 text-sm text-gray-500">
+                        {a.montant_ancien
+                          ? parseFloat(a.montant_ancien).toLocaleString() +
+                            " Ar"
+                          : "—"}
                       </td>
-                      <td className="px-5 py-4">
-                        <span className="text-sm font-bold text-blue-700">
-                          {a.montant_nouv
-                            ? parseFloat(a.montant_nouv).toLocaleString() +
-                              " Ar"
-                            : "—"}
-                        </span>
+                      <td className="px-5 py-4 text-sm font-bold text-blue-700">
+                        {a.montant_nouv
+                          ? parseFloat(a.montant_nouv).toLocaleString() + " Ar"
+                          : "—"}
                       </td>
                       <td className="px-5 py-4">
                         <div className="flex items-center gap-2">

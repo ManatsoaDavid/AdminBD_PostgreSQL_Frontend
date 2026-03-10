@@ -23,7 +23,9 @@ export default function Versements() {
   const [form, setForm] = useState({ ncheque: "", ncompte: "", montant: "" });
   const [editId, setEditId] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [modal, setModal] = useState({ open: false, id: null });
+  const [modalDelete, setModalDelete] = useState({ open: false, id: null });
+  const [modalAdd, setModalAdd] = useState(false);
+  const [modalEdit, setModalEdit] = useState(false);
 
   const charger = async () => {
     const [v, c] = await Promise.all([
@@ -54,22 +56,44 @@ export default function Versements() {
     setFiltered(result);
   }, [search, filtreClient, versements]);
 
-  const handleSubmit = async (e) => {
+  // Étape 1 : valider formulaire → ouvrir le bon modal
+  const handleSubmitForm = (e) => {
     e.preventDefault();
+    if (editId) {
+      setModalEdit(true);
+    } else {
+      setModalAdd(true);
+    }
+  };
+
+  // Étape 2 : confirmer ajout
+  const handleConfirmAdd = async () => {
+    setModalAdd(false);
     setLoading(true);
     try {
-      if (editId) {
-        await versementsAPI.update({ ...form, nversement: editId });
-        toast.success("✅ Versement modifié avec succès !");
-        setEditId(null);
-      } else {
-        await versementsAPI.create(form);
-        toast.success("✅ Versement ajouté avec succès !");
-      }
+      await versementsAPI.create(form);
+      toast.success("✅ Versement ajouté avec succès !");
       setForm({ ncheque: "", ncompte: "", montant: "" });
       charger();
     } catch {
-      toast.error("Une erreur est survenue.");
+      toast.error("Erreur lors de l'ajout.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Étape 2 : confirmer modification
+  const handleConfirmEdit = async () => {
+    setModalEdit(false);
+    setLoading(true);
+    try {
+      await versementsAPI.update({ ...form, nversement: editId });
+      toast.success("✅ Versement modifié avec succès !");
+      setEditId(null);
+      setForm({ ncheque: "", ncompte: "", montant: "" });
+      charger();
+    } catch {
+      toast.error("Erreur lors de la modification.");
     } finally {
       setLoading(false);
     }
@@ -84,28 +108,54 @@ export default function Versements() {
 
   const handleDelete = async () => {
     try {
-      await versementsAPI.delete(modal.id);
+      await versementsAPI.delete(modalDelete.id);
       toast.success("🗑️ Versement supprimé !");
       charger();
     } catch {
       toast.error("Erreur lors de la suppression.");
     } finally {
-      setModal({ open: false, id: null });
+      setModalDelete({ open: false, id: null });
     }
   };
 
+  // Nom du client sélectionné pour afficher dans le modal
+  const clientSelectionne = clients.find(
+    (c) => c.ncompte.toString() === form.ncompte.toString(),
+  );
   const totalMontant = filtered.reduce((s, v) => s + parseFloat(v.montant), 0);
 
   return (
     <div className="max-w-5xl mx-auto px-6 py-8">
       <ToastContainer position="top-right" autoClose={3000} />
+
+      {/* Modal suppression */}
       <ConfirmModal
-        isOpen={modal.open}
+        isOpen={modalDelete.open}
         onConfirm={handleDelete}
-        onCancel={() => setModal({ open: false, id: null })}
+        onCancel={() => setModalDelete({ open: false, id: null })}
         title="Supprimer ce versement ?"
         message="Cette action est irréversible et mettra à jour le solde du client automatiquement."
         type="danger"
+      />
+
+      {/* Modal ajout */}
+      <ConfirmModal
+        isOpen={modalAdd}
+        onConfirm={handleConfirmAdd}
+        onCancel={() => setModalAdd(false)}
+        title="Confirmer l'ajout ?"
+        message={`Ajouter le versement N° ${form.ncheque} de ${parseFloat(form.montant || 0).toLocaleString()} Ar pour ${clientSelectionne?.nomclient || "—"} ?`}
+        type="success"
+      />
+
+      {/* Modal modification */}
+      <ConfirmModal
+        isOpen={modalEdit}
+        onConfirm={handleConfirmEdit}
+        onCancel={() => setModalEdit(false)}
+        title="Confirmer la modification ?"
+        message={`Modifier le versement #${editId} avec un montant de ${parseFloat(form.montant || 0).toLocaleString()} Ar pour ${clientSelectionne?.nomclient || "—"} ?`}
+        type="warning"
       />
 
       {/* Header */}
@@ -151,7 +201,7 @@ export default function Versements() {
             </>
           )}
         </h3>
-        <form onSubmit={handleSubmit} className="flex gap-3 flex-wrap">
+        <form onSubmit={handleSubmitForm} className="flex gap-3 flex-wrap">
           <input
             className="flex-1 min-w-36 px-4 py-2.5 bg-gray-50 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:bg-white focus:outline-none transition-all text-sm"
             placeholder="N° Chèque"
@@ -211,7 +261,6 @@ export default function Versements() {
 
       {/* Tableau */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-        {/* Filtres */}
         <div className="flex flex-wrap gap-3 mb-5">
           <div className="relative flex-1 min-w-52">
             <Search
@@ -267,7 +316,6 @@ export default function Versements() {
           </div>
         </div>
 
-        {/* Table */}
         <div className="overflow-x-auto rounded-xl border border-gray-100">
           <table className="w-full">
             <thead>
@@ -341,7 +389,7 @@ export default function Versements() {
                         </button>
                         <button
                           onClick={() =>
-                            setModal({ open: true, id: v.nversement })
+                            setModalDelete({ open: true, id: v.nversement })
                           }
                           className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 text-xs font-semibold rounded-lg transition-colors border border-red-100"
                         >
